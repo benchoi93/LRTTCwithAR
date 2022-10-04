@@ -1,4 +1,5 @@
-
+import datetime
+import pandas as pd
 import random
 import scipy.io
 import numpy as np
@@ -120,6 +121,9 @@ def tc_var(mat_full, mat_missing, mask, alpha, beta, gamma, rho, max_iter, devic
     X_old = mat_missing.clone()
     norm0 = torch.linalg.norm(X_old, 'fro')
 
+    # best_RMSE = 1000
+    # best_MAPE = 1000
+
     for outer_loop in range(max_iter):
 
         start = time.time()
@@ -175,21 +179,28 @@ def tc_var(mat_full, mat_missing, mask, alpha, beta, gamma, rho, max_iter, devic
         X_old = X.clone()
 
         RMSE = rmse(M[~mask], truth[~mask])
+        MAPE = torch.mean(torch.abs(M[~mask] - truth[~mask]) / truth[~mask]) * 100
+
+        # if RMSE < best_RMSE:
+        #     best_RMSE = RMSE
+
+        # if MAPE < best_MAPE:
+        #     best_MAPE = MAPE
 
         rho = min(rho*rho_rate, rho_max)
 
         end = time.time()
 
-        if outer_loop % 1 == 0:
-            print("Iteration:{}, RMSE:{:.4}".format(outer_loop+1, RMSE))
-            print("Tol:{:.4}".format(tol))
-            print("Running time:{:.4}".format(end-start))
-            print()
+        # if outer_loop % 1 == 0:
+        #     print("Iteration:{}, RMSE:{:.4}".format(outer_loop+1, RMSE))
+        #     print("Tol:{:.4}".format(tol))
+        #     print("Running time:{:.4}".format(end-start))
+        #     print()
 
         if (tol < eps) or (outer_loop > max_iter):
             break
 
-    return X, E, M, A, A_old
+    return X, E, M, A, A_old, RMSE, MAPE
 
 
 if __name__ == "__main__":
@@ -212,43 +223,53 @@ if __name__ == "__main__":
 
     # generate random missing mask
 
-    # np.random.seed(500)
-    # mr = 0.9
-    # mask = np.random.rand(N,TD) > mr
-    # mat_missing = mat_full*mask
-
-    # generate column missing
-    random.seed(10)
-    mr = 0.9
-    ncol = int(TD*mr)
-
-    col_missing = random.sample(range(TD), ncol)
-
-    mask = np.ones((N, TD))
-    mask[:, col_missing] = np.zeros((N, 1))
-    mask = mask.astype(bool)
-
-    mat_missing = mat_full*mask
-
+    mr_lists = [0.9, 0.6, 0.3]
+    alphas = [0.1, 0.5, 1, 1.5, 2]
+    betas = [1e-3, 1e-2, 1e-1, 1]
+    gammas = [1e-3, 1e-2, 1e-1, 1]
     rho = 1e-4
-    max_iter = 10
+    max_iter = 30
 
-    alphas = [0.8]
-    betas = [0.001]
-    gammas = [1e-3]
+    # mr_lists = [0.3, 0.6, 0.9]
+    result = []
 
-    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-    tick = time.time()
-    for alpha in alphas:
-        for beta in betas:
-            for gamma in gammas:
-                print("alpha={}, beta={}, gamma={}\n".format(alpha, beta, gamma))
+    for mr in mr_lists:
+        # np.random.seed(500)
+        mr = 0.9
+        mask = np.random.rand(N, TD) > mr
+        # mat_missing = mat_full*mask
 
-                mat_missing = torch.FloatTensor(mat_missing)
-                mask = torch.BoolTensor(mask)
-                mat_full = torch.FloatTensor(mat_full)
+        # generate column missing
+        # random.seed(10)
+        # mr = 0.9
+        # ncol = int(TD*mr)
 
-                X, E, M, A, A_old = tc_var(mat_full, mat_missing, mask, alpha, beta, gamma, rho, max_iter, device)
+        # col_missing = random.sample(range(TD), ncol)
 
-    print("Total running time:{:.4}".format(time.time()-tick))
-    # 323*288
+        # mask = np.ones((N, TD))
+        # mask[:, col_missing] = np.zeros((N, 1))
+        # mask = mask.astype(bool)
+
+        mat_missing = mat_full*mask
+
+        device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+
+        for alpha in alphas:
+            for beta in betas:
+                for gamma in gammas:
+                    tick = time.time()
+                    print("alpha={}, beta={}, gamma={}\n".format(alpha, beta, gamma))
+
+                    mat_missing = torch.FloatTensor(mat_missing)
+                    mask = torch.BoolTensor(mask)
+                    mat_full = torch.FloatTensor(mat_full)
+
+                    X, E, M, A, A_old, RMSE, MAPE = tc_var(mat_full, mat_missing, mask, alpha, beta, gamma, rho, max_iter, device)
+
+                    print("Total running time:{:.4}".format(time.time()-tick))
+
+                    result.append([mr, alpha, beta, gamma, RMSE, MAPE, datetime.datetime.now()])
+
+                    # save results
+
+        # 323*288
