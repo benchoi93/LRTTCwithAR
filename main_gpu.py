@@ -1,3 +1,4 @@
+import argparse
 import datetime
 import pandas as pd
 import random
@@ -6,6 +7,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import time
 import torch
+import os
 
 
 def svt(mat, tau):
@@ -191,21 +193,23 @@ def tc_var(mat_full, mat_missing, mask, alpha, beta, gamma, rho, max_iter, devic
 
         end = time.time()
 
-        # if outer_loop % 1 == 0:
-        #     print("Iteration:{}, RMSE:{:.4}".format(outer_loop+1, RMSE))
-        #     print("Tol:{:.4}".format(tol))
-        #     print("Running time:{:.4}".format(end-start))
-        #     print()
+        if outer_loop % 1 == 0:
+            print("Iteration:{}, RMSE:{:.4}".format(outer_loop+1, RMSE))
+            print("Tol:{:.4}".format(tol))
+            print("Running time:{:.4}".format(end-start))
+            print()
 
         if (tol < eps) or (outer_loop > max_iter):
             break
 
-    return X, E, M, A, A_old, RMSE, MAPE
+    return X, E, M, A, A_old, RMSE.item(), MAPE.item()
 
 
 if __name__ == "__main__":
+    print("Start")
+    print(os.getcwd())
     # load traffic speed data
-    data = scipy.io.loadmat('Data/Seattle/speed.mat')
+    data = scipy.io.loadmat('./Data/Seattle/speed.mat')
     data = data['data']
 
     T = 288
@@ -223,7 +227,7 @@ if __name__ == "__main__":
 
     # generate random missing mask
 
-    mr_lists = [0.9, 0.6, 0.3]
+    # mr_lists = [0.9, 0.6, 0.3]
     alphas = [0.1, 0.5, 1, 1.5, 2]
     betas = [1e-3, 1e-2, 1e-1, 1]
     gammas = [1e-3, 1e-2, 1e-1, 1]
@@ -233,43 +237,62 @@ if __name__ == "__main__":
     # mr_lists = [0.3, 0.6, 0.9]
     result = []
 
-    for mr in mr_lists:
-        # np.random.seed(500)
-        mr = 0.9
-        mask = np.random.rand(N, TD) > mr
-        # mat_missing = mat_full*mask
+    # for mr in mr_lists:
+    # np.random.seed(500)
+    # mr = 0.9
 
-        # generate column missing
-        # random.seed(10)
-        # mr = 0.9
-        # ncol = int(TD*mr)
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--mr', type=float, default=0.9)
 
-        # col_missing = random.sample(range(TD), ncol)
+    args = parser.parse_args()
 
-        # mask = np.ones((N, TD))
-        # mask[:, col_missing] = np.zeros((N, 1))
-        # mask = mask.astype(bool)
+    mr = args.mr
 
-        mat_missing = mat_full*mask
+    mask = np.random.rand(N, TD) > mr
+    # mat_missing = mat_full*mask
 
-        device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    # generate column missing
+    # random.seed(10)
+    # mr = 0.9
+    # ncol = int(TD*mr)
 
-        for alpha in alphas:
-            for beta in betas:
-                for gamma in gammas:
-                    tick = time.time()
-                    print("alpha={}, beta={}, gamma={}\n".format(alpha, beta, gamma))
+    # col_missing = random.sample(range(TD), ncol)
 
-                    mat_missing = torch.FloatTensor(mat_missing)
-                    mask = torch.BoolTensor(mask)
-                    mat_full = torch.FloatTensor(mat_full)
+    # mask = np.ones((N, TD))
+    # mask[:, col_missing] = np.zeros((N, 1))
+    # mask = mask.astype(bool)
 
+    mat_missing = mat_full*mask
+
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+
+    for alpha in alphas:
+        for beta in betas:
+            for gamma in gammas:
+                tick = time.time()
+                print(f"mr={mr} alpha={alpha}, beta={beta}, gamma={gamma}")
+
+                mat_missing = torch.FloatTensor(mat_missing)
+                mask = torch.BoolTensor(mask)
+                mat_full = torch.FloatTensor(mat_full)
+
+                try:
                     X, E, M, A, A_old, RMSE, MAPE = tc_var(mat_full, mat_missing, mask, alpha, beta, gamma, rho, max_iter, device)
 
                     print("Total running time:{:.4}".format(time.time()-tick))
 
                     result.append([mr, alpha, beta, gamma, RMSE, MAPE, datetime.datetime.now()])
 
-                    # save results
+                    pd.DataFrame(result).to_csv(f"result_{mr}.csv")
 
-        # 323*288
+                except Exception as e:
+                    print(e)
+                    print("Total running time:{:.4}".format(time.time()-tick))
+
+                    result.append([mr, alpha, beta, gamma, np.nan, np.nan, datetime.datetime.now()])
+
+                    pd.DataFrame(result).to_csv(f"result_{mr}.csv")
+
+                # save results
+
+    # 323*288
